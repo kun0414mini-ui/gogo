@@ -75,71 +75,62 @@ with col3:
         
         stock = yf.Ticker(ticker_id)
 
-        # 取得最近四季的 EPS 與毛利率
         try:
             # 嘗試從 yfinance 擷取主要財報資訊
             q_income = stock.quarterly_financials
             q_fs = stock.quarterly_earnings
 
-            # 只留最近四季
-            four_q = q_fs.head(4)
-            four_q_income = q_income
+            if (q_income is None or len(q_income) == 0 or
+                q_fs is None or len(q_fs) == 0):
+                st.warning(f"查無 {company_name} 財務數據，請稍後再試。")
+                return
 
-            # 取得 EPS
-            eps = four_q['Earnings']
-            eps.index = pd.to_datetime(four_q.index)
-            
-            # 取得 Revenue
-            revenue = four_q['Revenue']
-            # 取得 Gross Profit
-            gross_profit = four_q_income.loc['Gross Profit'] if 'Gross Profit' in four_q_income.index else None
+            # 處理 quarterly_earnings (EPS)
+            if isinstance(q_fs, pd.DataFrame):
+                q_fs = q_fs.copy().sort_index(ascending=False)
+                q_fs = q_fs.head(4)
+                eps = q_fs['Earnings']
+                revenue = q_fs['Revenue']
+                eps.index = pd.to_datetime(q_fs.index)
+            else:
+                st.warning("EPS/Revenue 數據異常。")
+                return
+
+            # 處理 quarterly_financials (Gross Profit)
+            if 'Gross Profit' in q_income.index:
+                gross_profit = q_income.loc['Gross Profit']
+                # 取得與 earnings 日期重疊的部份
+                gross_profit = gross_profit.reindex(eps.index)
+            else:
+                gross_profit = pd.Series([None]*len(eps), index=eps.index)
 
             # 計算毛利率
-            if gross_profit is not None:
-                # gross_profit 會有 date column 為 columns
-                # 需要依照 quarterly_earnings 的順序對齊
-                gross_margin = []
-                for dt in eps.index:
-                    colname = None
-                    # 找到距離該日期最近的財報資料，通常前幾期能對上
-                    for col in gross_profit.index if isinstance(gross_profit, pd.Series) else gross_profit.keys():
-                        if pd.to_datetime(str(dt).split()[0]) == pd.to_datetime(str(col).split()[0]):
-                            colname = col
-                            break
-                    if colname:
-                        gp = gross_profit[colname]
-                        rev = revenue[dt]
-                        if rev and rev != 0:
-                            gm = gp / rev
-                        else:
-                            gm = None
-                    else:
-                        gm = None
-                    gross_margin.append(gm)
+            gross_margin = []
+            for dt in eps.index:
+                gp = gross_profit.get(dt, None)
+                rev = revenue.get(dt, None)
+                if pd.notnull(gp) and pd.notnull(rev) and rev != 0:
+                    gm = gp / rev
+                else:
+                    gm = None
+                gross_margin.append(gm)
+            gross_margin = pd.Series(gross_margin, index=eps.index)
 
-                gross_margin = pd.Series(gross_margin, index=eps.index)
-
-                # 計算 毛利率 QoQ, YoY
-                gm_qoq = gross_margin.pct_change(periods=1)
-                gm_yoy = gross_margin.pct_change(periods=4)
-
-                # 判斷是否連續兩季上升
-                is_expanding = False
-                if len(gross_margin) >= 3:
-                    last2_up = (gross_margin.iloc[0] < gross_margin.iloc[1] < gross_margin.iloc[2])
-                    if last2_up:
-                        is_expanding = True
-
-            else:
-                gross_margin = pd.Series([None]*len(eps), index=eps.index)
-                gm_qoq = pd.Series([None]*len(eps), index=eps.index)
-                gm_yoy = pd.Series([None]*len(eps), index=eps.index)
-                is_expanding = False
-
-            # EPS QoQ, YoY
+            # 計算 QoQ/YoY
             eps_qoq = eps.pct_change(periods=1)
-            eps_yoy = eps.pct_change(periods=4)
+            eps_yoy = eps.pct_change(periods=3) # 4季前
+            gm_qoq = gross_margin.pct_change(periods=1)
+            gm_yoy = gross_margin.pct_change(periods=3)
 
+            # 是否毛利率連兩季上升
+            gm_up = gross_margin.dropna()
+            is_expanding = False
+            if len(gm_up) >= 3:
+                # 近兩季連續上升
+                if gm_up.iloc[1] > gm_up.iloc[0] and gm_up.iloc[2] > gm_up.iloc[1]:
+                    is_expanding = True
+
+            # 合併呈現
             fin_df = pd.DataFrame({
                 "EPS": eps,
                 "EPS_QoQ": eps_qoq,
@@ -151,7 +142,6 @@ with col3:
             fin_df = fin_df.rename_axis("Quarter").reset_index()
             fin_df["Quarter"] = fin_df["Quarter"].dt.strftime("%Y-%m")
             st.dataframe(fin_df, use_container_width=True)
-            # 顯示護城河標籤
             if is_expanding:
                 st.markdown("🔥 **護城河擴大：毛利率連續兩季上升！**")
         except Exception as e:
