@@ -45,11 +45,23 @@ else:
 
     st.info("### 如何安裝與執行\n"
             "1. 先安裝必要套件：\n"
+            "（如遇安裝權限問題，請直接在指令後加上 --user 參數）\n"
             "```\n"
-            "python -m pip install streamlit yfinance\n"
+            "python -m pip install --user streamlit yfinance\n"
             "```\n"
-            "2. 在終端機進入本程式所在資料夾，執行：\n"
+            "2. 進入此程式所在的資料夾，再執行：\n"
             "```\n"
             "python -m streamlit run app.py\n"
             "```\n"
-            "然後依照網頁開啟指示進入瀏覽器觀看儀表板。")
+            "依照畫面指示於瀏覽器瀏覽儀表板即可。")
+            # 在原本的 get_data 下方加入智邦 2345.TW
+acct_price, acct_chg = get_data("2345.TW")
+
+# 在區塊 A 的 st.columns 中改為 3 欄
+col1, col2, col3 = st.columns(3)
+with col1:
+    st.metric("金像電 (2368)", f"{gce_price:.1f}", f"{gce_chg:+.2f}%")
+with col2:
+    st.metric("台光電 (2383) - 上游", f"{emc_price:.1f}", f"{emc_chg:+.2f}%")
+with col3:
+    st.metric("智邦 (2345) - 下游", f"{acct_price:.1f}", f"{acct_chg:+.2f}%")
