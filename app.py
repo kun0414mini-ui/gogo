@@ -65,3 +65,97 @@ with col2:
     st.metric("台光電 (2383) - 上游", f"{emc_price:.1f}", f"{emc_chg:+.2f}%")
 with col3:
     st.metric("智邦 (2345) - 下游", f"{acct_price:.1f}", f"{acct_chg:+.2f}%")
+
+    # --- 新區塊：財務指標區塊 ---
+    def show_financials(ticker_id, company_name):
+        import yfinance as yf
+        import pandas as pd
+
+        st.subheader(f"💹 {company_name}：財務指標區塊")
+        
+        stock = yf.Ticker(ticker_id)
+
+        # 取得最近四季的 EPS 與毛利率
+        try:
+            # 嘗試從 yfinance 擷取主要財報資訊
+            q_income = stock.quarterly_financials
+            q_fs = stock.quarterly_earnings
+
+            # 只留最近四季
+            four_q = q_fs.head(4)
+            four_q_income = q_income
+
+            # 取得 EPS
+            eps = four_q['Earnings']
+            eps.index = pd.to_datetime(four_q.index)
+            
+            # 取得 Revenue
+            revenue = four_q['Revenue']
+            # 取得 Gross Profit
+            gross_profit = four_q_income.loc['Gross Profit'] if 'Gross Profit' in four_q_income.index else None
+
+            # 計算毛利率
+            if gross_profit is not None:
+                # gross_profit 會有 date column 為 columns
+                # 需要依照 quarterly_earnings 的順序對齊
+                gross_margin = []
+                for dt in eps.index:
+                    colname = None
+                    # 找到距離該日期最近的財報資料，通常前幾期能對上
+                    for col in gross_profit.index if isinstance(gross_profit, pd.Series) else gross_profit.keys():
+                        if pd.to_datetime(str(dt).split()[0]) == pd.to_datetime(str(col).split()[0]):
+                            colname = col
+                            break
+                    if colname:
+                        gp = gross_profit[colname]
+                        rev = revenue[dt]
+                        if rev and rev != 0:
+                            gm = gp / rev
+                        else:
+                            gm = None
+                    else:
+                        gm = None
+                    gross_margin.append(gm)
+
+                gross_margin = pd.Series(gross_margin, index=eps.index)
+
+                # 計算 毛利率 QoQ, YoY
+                gm_qoq = gross_margin.pct_change(periods=1)
+                gm_yoy = gross_margin.pct_change(periods=4)
+
+                # 判斷是否連續兩季上升
+                is_expanding = False
+                if len(gross_margin) >= 3:
+                    last2_up = (gross_margin.iloc[0] < gross_margin.iloc[1] < gross_margin.iloc[2])
+                    if last2_up:
+                        is_expanding = True
+
+            else:
+                gross_margin = pd.Series([None]*len(eps), index=eps.index)
+                gm_qoq = pd.Series([None]*len(eps), index=eps.index)
+                gm_yoy = pd.Series([None]*len(eps), index=eps.index)
+                is_expanding = False
+
+            # EPS QoQ, YoY
+            eps_qoq = eps.pct_change(periods=1)
+            eps_yoy = eps.pct_change(periods=4)
+
+            fin_df = pd.DataFrame({
+                "EPS": eps,
+                "EPS_QoQ": eps_qoq,
+                "EPS_YoY": eps_yoy,
+                "Gross Margin": gross_margin,
+                "GM_QoQ": gm_qoq,
+                "GM_YoY": gm_yoy,
+            })
+            fin_df = fin_df.rename_axis("Quarter").reset_index()
+            fin_df["Quarter"] = fin_df["Quarter"].dt.strftime("%Y-%m")
+            st.dataframe(fin_df, use_container_width=True)
+            # 顯示護城河標籤
+            if is_expanding:
+                st.markdown("🔥 **護城河擴大：毛利率連續兩季上升！**")
+        except Exception as e:
+            st.warning(f"無法抓取 {company_name} 財務數據：{e}")
+
+    with st.expander("📈 智邦 (2345)：點擊查看財務指標"):
+        show_financials("2345.TW", "智邦 (2345)")
