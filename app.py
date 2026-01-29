@@ -2,65 +2,81 @@ import streamlit as st
 import yfinance as yf
 import pandas as pd
 
-# 1. 頁面基礎配置
-st.set_page_config(page_title="AI 網通戰情室", layout="wide")
-st.title("🚀 2368 金像電 AI 網通全鏈監控")
+# 1. 頁面配置
+st.set_page_config(page_title="AI網通戰情室-自動版", layout="wide")
+st.title("🚀 2368 金像電：全鏈自動監控系統")
 
-# 2. 備援財務數據 (當 API 延遲時使用最新查證數據)
-BACKUP_STATS = {
-    "2368.TW": {"name": "金像電", "eps": "5.82 (Q3)", "gm": "39.5%", "logic": "170億資本支出, 800G板龍頭"},
-    "2383.TW": {"name": "台光電", "eps": "7.45 (Q3)", "gm": "29.8%", "logic": "高階 M9 材料壟斷"},
-    "2345.TW": {"name": "智邦", "eps": "4.91 (Q3)", "gm": "22.3%", "logic": "800G 交換器需求出海口"}
+# 定義監控標的
+stocks = {
+    "2368.TW": "金像電 (中游)",
+    "2383.TW": "台光電 (上游)",
+    "2345.TW": "智邦 (下游)"
 }
 
-# 3. 數據抓取函數
-def get_stock_metrics(ticker_id):
+# 2. 數據抓取函數 (含錯誤處理邏輯)
+def fetch_all_data(ticker_id):
+    stock = yf.Ticker(ticker_id)
+    
+    # 抓取股價 (fast_info 較穩定)
+    price = stock.fast_info['last_price']
+    change = (price - stock.fast_info['previous_close']) / stock.fast_info['previous_close'] * 100
+    
+    # 抓取財報 (自動計算毛利率)
     try:
-        stock = yf.Ticker(ticker_id)
-        info = stock.fast_info
-        last_price = info['last_price']
-        prev_close = info['previous_close']
-        change = (last_price - prev_close) / prev_close * 100
-        return last_price, change
+        q_fin = stock.quarterly_financials
+        # 取得最新一季數據
+        latest_q = q_fin.columns[0].strftime('%Y-Q%q')
+        rev = q_fin.loc['Total Revenue'].iloc[0]
+        gp = q_fin.loc['Gross Profit'].iloc[0]
+        gm = (gp / rev) * 100
+        # 取得淨利計算簡易 EPS (僅為參考值)
+        ni = q_fin.loc['Net Income Common Stockholders'].iloc[0]
+        shares = stock.info.get('sharesOutstanding', 1)
+        est_eps = ni / shares
     except:
-        return 0.0, 0.0
+        latest_q, gm, est_eps = "數據更新中", 0.0, 0.0
+        
+    return {
+        "price": price,
+        "change": change,
+        "gm": gm,
+        "eps": est_eps,
+        "period": latest_q
+    }
 
-# 4. 區塊 A：即時產業鏈連動
-st.header("💹 區塊 A：產業鏈即時數據")
-col1, col2, col3 = st.columns(3)
+# 3. 畫面呈現 - 區塊 A：即時市況
+st.header("💹 區塊 A：產業鏈即時價格")
+cols = st.columns(len(stocks))
+results = {}
 
-gce_p, gce_c = get_stock_metrics("2368.TW")
-emc_p, emc_c = get_stock_metrics("2383.TW")
-acct_p, acct_c = get_stock_metrics("2345.TW")
+for i, (tid, name) in enumerate(stocks.items()):
+    data = fetch_all_data(tid)
+    results[tid] = data
+    cols[i].metric(name, f"{data['price']:.1f}", f"{data['change']:+.2f}%")
 
-with col1:
-    st.metric("金像電 (2368)", f"{gce_p:.1f}", f"{gce_c:+.2f}%")
-with col2:
-    st.metric("台光電 (2383) - 上游", f"{emc_p:.1f}", f"{emc_c:+.2f}%")
-with col3:
-    st.metric("智邦 (2345) - 下游", f"{acct_p:.1f}", f"{acct_c:+.2f}%")
-
-# 5. 區塊 B：財務驗證與獲利邏輯
-st.header("💰 區塊 B：獲利能力與產業邏輯")
-finance_list = []
-for tid, val in BACKUP_STATS.items():
-    finance_list.append({
-        "公司": val['name'],
-        "最新 EPS": val['eps'],
-        "最新毛利率": val['gm'],
-        "核心邏輯": val['logic']
+# 4. 畫面呈現 - 區塊 B：自動財報對比
+st.header("📊 區塊 B：自動化財務指標")
+df_list = []
+for tid, name in stocks.items():
+    df_list.append({
+        "公司": name,
+        "資料季度": results[tid]['period'],
+        "自動計毛利率": f"{results[tid]['gm']:.2f}%",
+        "預估單季EPS": f"{results[tid]['eps']:.2f}"
     })
-st.table(pd.DataFrame(finance_list))
+st.table(pd.DataFrame(df_list))
 
-# 6. 區塊 C：價格防禦與狀態判定
-st.header("🛡️ 區塊 C：自動判定系統")
-spread = gce_c - emc_c  # 中游與上游的強弱差
+# 5. 畫面呈現 - 區塊 C：價格防禦判定
+st.header("🛡️ 區塊 C：產業鏈強弱監控")
+gce_c = results["2368.TW"]["change"]
+emc_c = results["2383.TW"]["change"]
+spread = gce_c - emc_c
+
 if spread < -2:
-    st.error(f"🚨 警告：強弱差 {spread:.2f}%，上游已動，金像電存在補漲空間。")
+    st.error(f"🚨 警報：強弱差 {spread:.2f}%。上游材料(台光電)已漲，中游(金像電)補漲機率高！")
 elif spread > 2:
-    st.warning(f"⚠️ 提醒：強弱差 {spread:.2f}%，金像電衝刺過快，留意回檔壓力。")
+    st.warning(f"⚠️ 提醒：強弱差 {spread:.2f}%。金像電漲幅過大，注意 800G 訂單是否提前反應。")
 else:
-    st.success(f"✅ 狀態：強弱差 {spread:.2f}%，產業鏈步調一致。")
+    st.success(f"✅ 穩健：強弱差 {spread:.2f}%。產業鏈連動步調一致。")
 
-st.markdown("---")
-st.caption("數據來源：Yahoo Finance & 2026-01-29 產業研究報告")
+st.caption(f"最後更新時間：{pd.Timestamp.now(tz='Asia/Taipei')}")
