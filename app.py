@@ -39,7 +39,13 @@ for tid, v in CHAIN_DATA.items():
         alert = "🔴 警戒" if change > 0.1 else "🟢 正常"
         flow = f"{v['q2']} → {v['q3']} ({change:+.1%})"
     else: flow, alert = "N/A", "⚪ 略過"
-    table_data.append({"股票名稱 (代號)": v['name'], "最新毛利率": v['gm'], "週轉流動 (Q2→Q3)": flow, "庫存警戒燈": alert, "數據基準": "2025 Q3"})
+    table_data.append({
+        "產業位置": v['role'],
+        "股票名稱 (代號)": v['name'], 
+        "最新毛利率": v['gm'], 
+        "週轉流動 (Q2→Q3)": flow, 
+        "庫存警戒燈": alert, 
+        "數據基準": "2025 Q3"})
 st.table(pd.DataFrame(table_data))
 
 # 區塊 C：價格防禦判定
