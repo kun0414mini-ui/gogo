@@ -2,81 +2,57 @@ import streamlit as st
 import yfinance as yf
 import pandas as pd
 
-# 1. 頁面配置
-st.set_page_config(page_title="AI網通戰情室-自動版", layout="wide")
-st.title("🚀 2368 金像電：全鏈自動監控系統")
+# 1. 頁面基礎配置
+st.set_page_config(page_title="AI 網通戰情室", layout="wide")
+st.title("🚀 AI 網通全鏈監控戰情室")
 
-# 定義監控標的
-stocks = {
-    "2368.TW": "金像電 (中游)",
-    "2383.TW": "台光電 (上游)",
-    "2345.TW": "智邦 (下游)"
+# 2. 週報精選數據 (2026-01-30 更新)
+MONITOR_DATA = {
+    "2368.TW": {"name": "金像電 (2368)", "eps": "5.82", "gm": "39.5%", "status": "🚀 極度擴張", "logic": "170億資本支出鎖定800G/ASIC"},
+    "2383.TW": {"name": "台光電 (2383)", "eps": "7.45", "gm": "29.8%", "status": "💎 材料霸主", "logic": "M9等級高階材料壟斷地位"},
+    "2345.TW": {"name": "智邦 (2345)", "eps": "4.91", "gm": "22.3%", "status": "✅ 穩健成長", "logic": "800G交換器需求出海口"}
 }
 
-# 2. 數據抓取函數 (含錯誤處理邏輯)
-def fetch_all_data(ticker_id):
-    stock = yf.Ticker(ticker_id)
-    
-    # 抓取股價 (fast_info 較穩定)
-    price = stock.fast_info['last_price']
-    change = (price - stock.fast_info['previous_close']) / stock.fast_info['previous_close'] * 100
-    
-    # 抓取財報 (自動計算毛利率)
+# 3. 數據抓取函數
+def fetch_live_price(ticker_id):
     try:
-        q_fin = stock.quarterly_financials
-        # 取得最新一季數據
-        latest_q = q_fin.columns[0].strftime('%Y-Q%q')
-        rev = q_fin.loc['Total Revenue'].iloc[0]
-        gp = q_fin.loc['Gross Profit'].iloc[0]
-        gm = (gp / rev) * 100
-        # 取得淨利計算簡易 EPS (僅為參考值)
-        ni = q_fin.loc['Net Income Common Stockholders'].iloc[0]
-        shares = stock.info.get('sharesOutstanding', 1)
-        est_eps = ni / shares
+        stock = yf.Ticker(ticker_id)
+        info = stock.fast_info
+        return info['last_price'], (info['last_price'] - info['previous_close']) / info['previous_close'] * 100
     except:
-        latest_q, gm, est_eps = "數據更新中", 0.0, 0.0
-        
-    return {
-        "price": price,
-        "change": change,
-        "gm": gm,
-        "eps": est_eps,
-        "period": latest_q
-    }
+        return 0.0, 0.0
 
-# 3. 畫面呈現 - 區塊 A：即時市況
-st.header("💹 區塊 A：產業鏈即時價格")
-cols = st.columns(len(stocks))
-results = {}
+# 4. 區塊 A：即時價格與強弱監控
+st.header("💹 區塊 A：即時市況監控")
+cols = st.columns(3)
+prices = {}
 
-for i, (tid, name) in enumerate(stocks.items()):
-    data = fetch_all_data(tid)
-    results[tid] = data
-    cols[i].metric(name, f"{data['price']:.1f}", f"{data['change']:+.2f}%")
+for i, tid in enumerate(MONITOR_DATA.keys()):
+    p, c = fetch_live_price(tid)
+    prices[tid] = c
+    cols[i].metric(MONITOR_DATA[tid]['name'], f"{p:.1f}", f"{c:+.2f}%")
 
-# 4. 畫面呈現 - 區塊 B：自動財報對比
-st.header("📊 區塊 B：自動化財務指標")
-df_list = []
-for tid, name in stocks.items():
-    df_list.append({
-        "公司": name,
-        "資料季度": results[tid]['period'],
-        "自動計毛利率": f"{results[tid]['gm']:.2f}%",
-        "預估單季EPS": f"{results[tid]['eps']:.2f}"
-    })
-st.table(pd.DataFrame(df_list))
+# 5. 區塊 B：週報核心獲利對比
+st.header("📊 區塊 B：獲利邏輯驗證")
+finance_df = pd.DataFrame([
+    {
+        "標的（代號）": v['name'],
+        "狀態判定": v['status'],
+        "最新單季 EPS": v['eps'],
+        "最新毛利率": v['gm'],
+        "獲利邏輯拆解": v['logic']
+    } for v in MONITOR_DATA.values()
+])
+st.table(finance_df)
 
-# 5. 畫面呈現 - 區塊 C：價格防禦判定
-st.header("🛡️ 區塊 C：產業鏈強弱監控")
-gce_c = results["2368.TW"]["change"]
-emc_c = results["2383.TW"]["change"]
-spread = gce_c - emc_c
-
+# 6. 區塊 C：產業鏈強弱差 (Spread) 判定
+st.header("⚖️ 區塊 C：價格防禦判定")
+spread = prices["2368.TW"] - prices["2383.TW"]
 if spread < -2:
-    st.error(f"🚨 警報：強弱差 {spread:.2f}%。上游材料(台光電)已漲，中游(金像電)補漲機率高！")
+    st.error(f"🚩 強弱差 {spread:.2f}%：上游領跑，標的（2368）存在補漲空間。")
 elif spread > 2:
-    st.warning(f"⚠️ 提醒：強弱差 {spread:.2f}%。金像電漲幅過大，注意 800G 訂單是否提前反應。")
+    st.warning(f"🚩 強弱差 {spread:.2f}%：標的（2368）過熱，觀察下游需求。")
 else:
-    st.success(f"✅ 穩健：強弱差 {spread:.2f}%。產業鏈連動步調一致。")
+    st.success(f"🚩 強弱差 {spread:.2f}%：產業鏈步調同步。")
 
-st.caption(f"最後更新時間：{pd.Timestamp.now(tz='Asia/Taipei')}")
+st.caption("數據來源：Yahoo Finance & 2026-01-30 週報數據")
