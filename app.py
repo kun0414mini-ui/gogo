@@ -3,16 +3,16 @@ import yfinance as yf
 import pandas as pd
 
 # 1. 頁面基礎配置
-st.set_page_config(page_title="AI 伺服器全鏈戰情室", layout="wide")
-st.title("🚀 標的 (2368) 高階伺服器垂直產業鏈監控")
+st.set_page_config(page_title="AI 伺服器垂直全鏈戰情室", layout="wide")
+st.title("🚀 金像電 (2368) 垂直產業鏈暨庫存監控系統")
 
-# 2. 產業鏈數據庫 (2026-01-30 更新)
+# 2. 產業鏈暨庫存數據庫 (2026-01-30 更新)
 CHAIN_DATA = {
-    "2330.TW": {"role": "上游：封裝", "name": "台積電", "metric": "CoWoS 產能", "status": "🚀 供給關鍵"},
-    "2383.TW": {"role": "上游：材料", "name": "台光電", "metric": "GM: 29.8%", "status": "💎 材料霸主"},
-    "2368.TW": {"role": "中游：PCB", "name": "金像電", "metric": "GM: 39.5%", "status": "🔥 極度擴張"},
-    "2345.TW": {"role": "下游：交換器", "name": "智邦", "metric": "GM: 22.3%", "status": "✅ 需求穩健"},
-    "2317.TW": {"role": "下游：組裝", "name": "鴻海", "metric": "AI伺服器佔比", "status": "🛡️ 防禦穩健"}
+    "2330.TW": {"name": "台積電 (2330)", "role": "上游：封裝", "gm": "53.4%", "inv": 0, "prev_inv": 0, "base": "2025 Q3"},
+    "2383.TW": {"name": "台光電 (2383)", "role": "上游：材料", "gm": "29.8%", "inv": 52.12, "prev_inv": 51.5, "base": "2025 Q3"},
+    "2368.TW": {"name": "金像電 (2368)", "role": "中游：PCB", "gm": "39.5%", "inv": 73.01, "prev_inv": 90.9, "base": "2025 Q3"},
+    "2345.TW": {"name": "智邦 (2345)", "role": "下游：交換器", "gm": "22.3%", "inv": 43.25, "prev_inv": 45.4, "base": "2025 Q3"},
+    "2317.TW": {"name": "鴻海 (2317)", "role": "下游：組裝", "gm": "6.4%", "inv": 49.51, "prev_inv": 50.1, "base": "2025 Q3"}
 }
 
 def get_live(ticker):
@@ -21,43 +21,38 @@ def get_live(ticker):
         return i['last_price'], (i['last_price'] - i['previous_close']) / i['previous_close'] * 100
     except: return 0.0, 0.0
 
-# 3. 區塊 A：即時市況與垂直連動
+# 3. 區塊 A：即時市況
 st.header("💹 區塊 A：產業鏈即時動能對照")
-st.caption("觀察邏輯：上游動能領先中游，下游出貨驗證獲利。")
 cols = st.columns(len(CHAIN_DATA))
 prices = {}
-
 for i, (tid, info) in enumerate(CHAIN_DATA.items()):
     p, c = get_live(tid)
     prices[tid] = c
-    cols[i].metric(f"{info['name']} ({tid[:4]})", f"{p:.1f}", f"{c:+.2f}%")
+    cols[i].metric(info['name'], f"{p:.1f}", f"{c:+.2f}%")
 
-# 4. 區塊 B：獲利邏輯驗證 (垂直縱深版)
-st.header("📊 區塊 B：全鏈獲利邏輯拆解")
-finance_df = pd.DataFrame([
-    {
+# 4. 區塊 B：獲利與庫存驗證
+st.header("📊 區塊 B：獲利邏輯與庫存監控")
+table_data = []
+for tid, v in CHAIN_DATA.items():
+    inv_change = 0 if v['prev_inv'] == 0 else (v['inv'] - v['prev_inv']) / v['prev_inv']
+    alert_light = "🔴 警戒" if inv_change > 0.1 else "🟢 正常"
+    
+    table_data.append({
         "產業位置": v['role'],
-        "標的（代號）": v['name'] + f" ({k[:4]})",
-        "最新狀態": v['status'],
-        "核心數據/指標": v['metric'],
-        "投資邏輯": "連動觀察晶片供給與下游出貨之平衡點"
-    } for k, v in CHAIN_DATA.items()
-])
-st.table(finance_df)
+        "股票名稱 (代號)": v['name'],
+        "最新毛利率": v['gm'],
+        "存貨週轉天數": f"{v['inv']} 天" if v['inv'] > 0 else "N/A",
+        "庫存警戒燈": alert_light,
+        "數據基準": v['base']
+    })
+st.table(pd.DataFrame(table_data))
 
-# 5. 區塊 C：跨層級價格防禦判定
-st.header("⚖️ 區塊 C：產業鏈強弱差警示 (Spread)")
-# 計算「中游-上游材料」與「中游-下游交換器」的強弱差
+# 5. 區塊 C：價格防禦判定
+st.header("⚖️ 區塊 C：價格防禦與強弱差判定")
 spread_up = prices["2368.TW"] - prices["2383.TW"]
-spread_down = prices["2368.TW"] - prices["2345.TW"]
-
-col_up, col_down = st.columns(2)
-with col_up:
-    st.subheader("中游 vs 上游 (材料)")
-    if spread_up < -2: st.error(f"⚠️ 價差 {spread_up:.2f}%：材料端領漲，標的 (2368) 存在補漲機會。")
-    else: st.success(f"✅ 價差 {spread_up:.2f}%：材料供應與板材加工估值同步。")
-
-with col_down:
-    st.subheader("中游 vs 下游 (交換器)")
-    if spread_down > 2: st.warning(f"⚠️ 價差 {spread_down:.2f}%：標的 (2368) 衝刺過快，需核實下游智邦拉貨動能。")
-    else: st.success(f"✅ 價差 {spread_down:.2f}%：下游需求足以支撐中游產能。")
+if spread_up < -2:
+    st.error(f"⚠️ 強弱差 {spread_up:.2f}%：台光電 (2383) 領漲，金像電 (2368) 存在補漲空間。")
+elif spread_up > 2:
+    st.warning(f"⚠️ 強弱差 {spread_up:.2f}%：金像電 (2368) 漲幅過大，需核實下游庫存去化。")
+else:
+    st.success(f"✅ 強弱差 {spread_up:.2f}%：產業鏈步調同步。")
